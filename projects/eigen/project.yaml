@@ -1,0 +1,4 @@
+homepage: "http://eigen.tuxfamily.org"
+primary_contact: "sbucur@google.com"
+auto_ccs:
+  - "chtz@informatik.uni-bremen.de"

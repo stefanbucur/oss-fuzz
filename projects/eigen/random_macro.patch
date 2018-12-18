@@ -1,0 +1,92 @@
+diff --git a/Eigen/src/Core/MathFunctions.h b/Eigen/src/Core/MathFunctions.h
+--- a/Eigen/src/Core/MathFunctions.h
++++ b/Eigen/src/Core/MathFunctions.h
+@@ -602,6 +602,11 @@ struct pow_impl<ScalarX,ScalarY, true>
+ * Implementation of random                                               *
+ ****************************************************************************/
+ 
++// Can be overridden in tests to supply a controlled source of randomness.
++#ifndef EIGEN_RANDOM_INT_GENERATOR
++#define EIGEN_RANDOM_INT_GENERATOR std::rand
++#endif
++
+ template<typename Scalar,
+          bool IsComplex,
+          bool IsInteger>
+@@ -624,7 +629,7 @@ struct random_default_impl<Scalar, false
+ {
+   static inline Scalar run(const Scalar& x, const Scalar& y)
+   {
+-    return x + (y-x) * Scalar(std::rand()) / Scalar(RAND_MAX);
++    return x + (y-x) * Scalar(EIGEN_RANDOM_INT_GENERATOR()) / Scalar(RAND_MAX);
+   }
+   static inline Scalar run()
+   {
+@@ -704,7 +709,7 @@ struct random_default_impl<Scalar, false
+     else                   multiplier = 1 + range / (rand_max + 1);
+     // Rejection sampling.
+     do {
+-      offset = (unsigned(std::rand()) * multiplier) / divisor;
++      offset = (unsigned(EIGEN_RANDOM_INT_GENERATOR()) * multiplier) / divisor;
+     } while (offset > range);
+     return Scalar(ScalarX(x) + offset);
+   }
+@@ -719,7 +724,7 @@ struct random_default_impl<Scalar, false
+            shift = EIGEN_PLAIN_ENUM_MAX(0, int(rand_bits) - int(scalar_bits)),
+            offset = NumTraits<Scalar>::IsSigned ? (1 << (EIGEN_PLAIN_ENUM_MIN(rand_bits,scalar_bits)-1)) : 0
+     };
+-    return Scalar((std::rand() >> shift) - offset);
++    return Scalar((EIGEN_RANDOM_INT_GENERATOR() >> shift) - offset);
+ #endif
+   }
+ };
+diff --git a/test/main.h b/test/main.h
+--- a/test/main.h
++++ b/test/main.h
+@@ -758,7 +758,7 @@ inline void set_seed_from_string(const c
+   g_has_set_seed = true;
+ }
+ 
+-int main(int argc, char *argv[])
++int initialize_tests(int argc, char *argv[])
+ {
+     g_has_set_repeat = false;
+     g_has_set_seed = false;
+@@ -817,7 +817,29 @@ int main(int argc, char *argv[])
+     g_test_stack.push_back(ss.str());
+     srand(g_seed);
+     std::cout << "Repeating each test " << g_repeat << " times" << std::endl;
++    return 0;
++}
+ 
++#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
++extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
++    int init_result = initialize_tests(*argc, *argv);
++    if (init_result != 0) return init_result;
++    VERIFY(EigenTest::all().size() == 1);
++    return 0;
++}
++
++extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
++    const EigenTest& singleton_test = *EigenTest::all()[0];
++    Eigen::g_test_stack.push_back(singleton_test.name());
++    singleton_test();
++    Eigen::g_test_stack.pop_back();
++    return 0;
++}
++#else
++int main(int argc, char *argv[])
++{
++    int init_result = initialize_tests(argc, argv);
++    if (init_result != 0) return init_result;
+     VERIFY(EigenTest::all().size()>0);
+ 
+     for(std::size_t i=0; i<EigenTest::all().size(); ++i)
+@@ -830,6 +852,7 @@ int main(int argc, char *argv[])
+ 
+     return 0;
+ }
++#endif
+ 
+ // These warning are disabled here such that they are still ON when parsing Eigen's header files.
+ #if defined __INTEL_COMPILER
